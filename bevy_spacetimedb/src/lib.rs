@@ -5,6 +5,7 @@
 mod aliases;
 mod channel_receiver;
 mod events;
+// mod old_plugin;
 mod plugin;
 mod stdb_connection;
 
