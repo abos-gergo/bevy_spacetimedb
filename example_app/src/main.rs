@@ -9,6 +9,8 @@ use stdb::{
     StarSystemsTableAccess, gs_register, player_register,
 };
 
+use crate::stdb::RemoteModule;
+
 mod stdb;
 
 #[derive(Clone, Debug)]
@@ -25,59 +27,61 @@ pub struct GsRegisterEvent {
 }
 
 pub fn main() {
+    StdbPlugin::builder()
+        .with_name("asd")
+        .with_uri("dsa")
+        .with_run_fn(DbConnection::run_threaded);
     App::new()
         .add_plugins((MinimalPlugins, LogPlugin::default()))
-        .add_plugins(
-            StdbPlugin::default()
-                .with_connection(|send_connected, send_disconnected, send_connect_error, _| {
-                    let conn = DbConnection::builder()
-                        .with_module_name("stellarwar")
-                        .with_uri("https://stdb.jlavocat.eu")
-                        .on_connect_error(move |_ctx, err| {
-                            send_connect_error
-                                .send(StdbConnectionErrorEvent { err })
-                                .unwrap();
-                        })
-                        .on_disconnect(move |_ctx, err| {
-                            send_disconnected
-                                .send(StdbDisconnectedEvent { err })
-                                .unwrap();
-                        })
-                        .on_connect(move |_ctx, id, token| {
-                            send_connected
-                                .send(StdbConnectedEvent {
-                                    identity: id,
-                                    access_token: token.to_string(),
-                                })
-                                .unwrap();
-                        })
-                        .build()
-                        .expect("SpacetimeDB connection failed");
-
-                    conn.run_threaded();
-                    conn
-                })
-                .with_events(|plugin, app, db, reducers| {
-                    tables!(
-                        players,
-                        game_servers,
-                        (star_systems, no_update),
-                        (planets, no_update)
-                    );
-
-                    register_reducers!(
-                        on_player_register(ctx, id) => RegisterPlayerEvent {
-                            event: ctx.event.clone(),
-                            id: *id
-                        },
-                        on_gs_register(ctx, ip, port) => GsRegisterEvent {
-                            event: ctx.event.clone(),
-                            ip: ip.clone(),
-                            port: *port
-                        }
-                    );
-                }),
-        )
+        // .add_plugins(W
+        //     StdbPlugin::default()
+        //         .with_connection(|send_connected, send_disconnected, send_connect_error, _| {
+        //             let conn = DbConnection::builder()
+        //                 .with_module_name("stellarwar")
+        //                 .with_uri("https://stdb.jlavocat.eu")
+        //                 .on_connect_error(move |_ctx, err| {
+        //                     send_connect_error
+        //                         .send(StdbConnectionErrorEvent { err })
+        //                         .unwrap();
+        //                 })
+        //                 .on_disconnect(move |_ctx, err| {
+        //                     send_disconnected
+        //                         .send(StdbDisconnectedEvent { err })
+        //                         .unwrap();
+        //                 })
+        //                 .on_connect(move |_ctx, id, token| {
+        //                     send_connected
+        //                         .send(StdbConnectedEvent {
+        //                             identity: id,
+        //                             access_token: token.to_string(),
+        //                         })
+        //                         .unwrap();
+        //                 })
+        //                 .build()
+        //                 .expect("SpacetimeDB connection failed");
+        //             conn.run_threaded();
+        //             conn
+        //         })
+        //         .with_events(|plugin, app, db, reducers| {
+        //             tables!(
+        //                 players,
+        //                 game_servers,
+        //                 (star_systems, no_update),
+        //                 (planets, no_update)
+        //             );
+        //             register_reducers!(
+        //                 on_player_register(ctx, id) => RegisterPlayerEvent {
+        //                     event: ctx.event.clone(),
+        //                     id: *id
+        //                 },
+        //                 on_gs_register(ctx, ip, port) => GsRegisterEvent {
+        //                     event: ctx.event.clone(),
+        //                     ip: ip.clone(),
+        //                     port: *port
+        //                 }
+        //             );
+        //         }),
+        // )
         .add_systems(
             Update,
             (on_connected, on_register_player, on_gs_register, on_player),
@@ -90,7 +94,10 @@ fn on_connected(
     stdb: Res<StdbConnection<DbConnection>>,
 ) {
     for ev in events.read() {
-        info!("Connected to SpacetimeDB with identity: {}", ev.identity.to_hex());
+        info!(
+            "Connected to SpacetimeDB with identity: {}",
+            ev.identity.to_hex()
+        );
 
         // Call any reducers
         stdb.reducers().player_register(1).unwrap();
