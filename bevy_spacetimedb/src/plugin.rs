@@ -11,78 +11,69 @@ use bevy::{
     app::{App, Plugin},
     platform::collections::HashMap,
 };
+use bevy_spacetimedb_macros::tables;
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext};
 
-use crate::{StdbConnectedEvent, StdbConnectionErrorEvent, StdbDisconnectedEvent};
+use crate::{StdbConnectedEvent, StdbConnection, StdbConnectionErrorEvent, StdbDisconnectedEvent};
 
 ///
 pub struct StdbPlugin {}
 
 impl StdbPlugin {
     ///
-    pub fn connection() -> StdbPluginConnectionBuilder {
-        StdbPluginConnectionBuilder {
+    pub fn builder<
+        C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
+        M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
+    >() -> StdbPluginBuilder<C, M> {
+        StdbPluginBuilder {
             name: Default::default(),
             uri: Default::default(),
+            run_fn: None,
         }
     }
 }
 
-///
-pub struct StdbPluginConnectionBuilder {
-    name: String,
-    uri: String,
+impl Plugin for StdbPlugin {
+    fn build(&self, app: &mut App) {}
 }
 
 ///
-impl StdbPluginConnectionBuilder {
-    ///
-    pub fn build<
-        C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
-        M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
-    >(
-        self,
-        run_fn: fn(&C) -> JoinHandle<()>,
-    ) {
-        let (send_connected, recv_connected) = channel::<StdbConnectedEvent>();
-        let (send_disconnected, recv_disconnected) = channel::<StdbDisconnectedEvent>();
-        let (send_connect_error, recv_connect_error) = channel::<StdbConnectionErrorEvent>();
+#[derive(Default)]
+pub struct StdbPluginBuilder<
+    C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
+    M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
+> {
+    name: String,
+    uri: String,
+    run_fn: Option<fn(&C) -> JoinHandle<()>>,
+}
 
-        let conn = &DbConnectionBuilder::<M>::new()
-            .with_module_name(self.name)
-            .with_uri(self.uri)
-            .on_connect_error(move |_ctx, err| {
-                send_connect_error
-                    .send(StdbConnectionErrorEvent { err })
-                    .unwrap();
-            })
-            .on_disconnect(move |_ctx, err| {
-                send_disconnected
-                    .send(StdbDisconnectedEvent { err })
-                    .unwrap();
-            })
-            .on_connect(move |_ctx, id, token| {
-                send_connected
-                    .send(StdbConnectedEvent {
-                        identity: id,
-                        access_token: token.to_string(),
-                    })
-                    .unwrap();
-            })
-            .build()
-            .expect("Connection builder is not set");
-        run_fn(conn);
+///
+impl<
+    C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
+    M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
+> StdbPluginBuilder<C, M>
+{
+    ///
+    pub fn with_run_fn(mut self, run_fn: fn(&C) -> JoinHandle<()>) -> Self {
+        self.run_fn = Some(run_fn);
+        self
     }
 
     /// .
-    pub fn name(mut self, name: impl Into<String>) -> Self {
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
     /// .
-    pub fn uri(mut self, uri: impl Into<String>) -> Self {
+    pub fn with_uri(mut self, uri: impl Into<String>) -> Self {
         self.uri = uri.into();
         self
+    }
+
+    ///
+    pub fn with_tables() {
+        tables!();
     }
 }

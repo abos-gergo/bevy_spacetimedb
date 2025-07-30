@@ -27,10 +27,10 @@ pub struct GsRegisterEvent {
 }
 
 pub fn main() {
-    StdbPlugin::connection()
-        .name("asd")
-        .uri("dsa")
-        .build(DbConnection::run_threaded);
+    StdbPlugin::builder()
+        .with_name("asd")
+        .with_uri("dsa")
+        .with_run_fn(DbConnection::run_threaded);
     App::new()
         .add_plugins((MinimalPlugins, LogPlugin::default()))
         // .add_plugins(W
