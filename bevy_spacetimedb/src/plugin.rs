@@ -11,36 +11,26 @@ use bevy::{
     app::{App, Plugin},
     platform::collections::HashMap,
 };
-use bevy_spacetimedb_macros::tables;
 use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table, TableWithPrimaryKey};
 
 use crate::{
-    AddEventChannelAppExtensions, DeleteEvent, InsertEvent, InsertUpdateEvent, StdbConnectedEvent,
-    StdbConnection, StdbConnectionErrorEvent, StdbDisconnectedEvent, UpdateEvent, events,
+    AddEventChannelAppExtensions, DeleteEvent, InsertEvent, InsertUpdateEvent, ReducerResultEvent,
+    StdbConnectedEvent, StdbConnection, StdbConnectionErrorEvent, StdbDisconnectedEvent,
+    UpdateEvent,
 };
 
-pub type FnRegisterCallbacks<C, M> = fn(&StdbPlugin<C, M>, &mut App, &<C as DbContext>::DbView);
-
-pub struct StdbPlugin<
-    C: spacetimedb_sdk::__codegen::DbConnection<Module = M> + DbContext,
-    M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
-> {
-    name: String,
-    uri: String,
-    run_fn: Option<fn(&C) -> JoinHandle<()>>,
-    event_senders: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
-    register_event: Option<FnRegisterCallbacks<C, M>>,
-}
+pub type FnRegisterCallbacks<C, M> =
+    fn(&StdbPlugin<C, M>, &mut App, &<C as DbContext>::DbView, &<C as DbContext>::Reducers);
 
 #[derive(Debug, Default, Clone, Copy)]
-pub struct StdbEvents {
+pub struct RegisterToTableEvents {
     insert: bool,
     delete: bool,
     update: bool,
     insert_update: bool,
 }
 
-impl StdbEvents {
+impl RegisterToTableEvents {
     pub fn all() -> Self {
         Self {
             insert: true,
@@ -49,15 +39,20 @@ impl StdbEvents {
             insert_update: true,
         }
     }
+}
 
-    pub fn no_update() -> Self {
-        Self {
-            insert: true,
-            delete: true,
-            update: false,
-            insert_update: false,
-        }
-    }
+pub struct StdbPlugin<
+    C: spacetimedb_sdk::__codegen::DbConnection<Module = M> + DbContext,
+    M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
+> {
+    name: String,
+    uri: String,
+    token: String,
+    run_fn: Option<fn(&C) -> JoinHandle<()>>,
+    event_senders: Mutex<HashMap<TypeId, Box<dyn Any + Send + Sync>>>,
+    table_registers:
+        Vec<Box<dyn Fn(&StdbPlugin<C, M>, &mut App, &<C as DbContext>::DbView) + Send + Sync>>,
+    register_callbacks: Option<FnRegisterCallbacks<C, M>>,
 }
 
 impl<
@@ -69,9 +64,11 @@ impl<
         Self {
             name: Default::default(),
             uri: Default::default(),
-            run_fn: None,
-            event_senders: Mutex::new(HashMap::new()),
-            register_event: None,
+            token: Default::default(),
+            run_fn: Option::default(),
+            event_senders: Mutex::default(),
+            table_registers: Vec::default(),
+            register_callbacks: Option::default(),
         }
     }
 }
@@ -96,19 +93,25 @@ impl<
         self
     }
 
-    pub fn with_tables() {
-        tables!();
+    pub fn with_token(mut self, token: impl Into<String>) -> Self {
+        self.token = token.into();
+        self
     }
 
-    pub fn add_table<TRow, TTable, F>(mut self, accessor: F, events: StdbEvents) -> Self
+    /// Adds a function to register all events required by a Bevy application
+    pub fn with_events(mut self, register_callbacks: FnRegisterCallbacks<C, M>) -> Self {
+        self.register_callbacks = Some(register_callbacks);
+        self
+    }
+
+    pub fn add_table<TRow, TTable, F>(mut self, accessor: F, events: RegisterToTableEvents) -> Self
     where
         TRow: Send + Sync + Clone + 'static,
         TTable: Table<Row = TRow> + TableWithPrimaryKey<Row = TRow>,
-        F: 'static + Fn(&'static C::DbView) -> TTable,
+        F: 'static + Send + Sync + Fn(&C::DbView) -> TTable,
     {
-        //Store the accessor inside the struct
-        // register_events: Vec<fn(&Self, &mut App, &'static C::DbView)>,
-        let register = move |plugin: &Self, app: &mut App, db: &'static C::DbView| {
+        // A closure that sets up events for the table
+        let register = move |plugin: &Self, app: &mut App, db: &C::DbView| {
             let table = accessor(db);
             if events.insert {
                 plugin.on_insert(app, &table);
@@ -124,16 +127,14 @@ impl<
             }
         };
 
-        // self.register_events
-        //     .lock()
-        //     .unwrap()
-        //     .push(Box::new(register));
+        // Store this table, and later when the plugin is built, call them all on line 316-318.
+        self.table_registers.push(Box::new(register));
 
         self
     }
 
     /// Register a Bevy event of type InsertEvent<TRow> for the `on_insert` event on the provided table.
-    fn on_insert<TRow>(&self, app: &mut App, table: &impl Table<Row = TRow>) -> &Self
+    pub fn on_insert<TRow>(&self, app: &mut App, table: &impl Table<Row = TRow>) -> &Self
     where
         TRow: Send + Sync + Clone + 'static,
     {
@@ -161,7 +162,7 @@ impl<
     }
 
     /// Register a Bevy event of type DeleteEvent<TRow> for the `on_delete` event on the provided table.
-    fn on_delete<TRow>(&self, app: &mut App, table: &impl Table<Row = TRow>) -> &Self
+    pub fn on_delete<TRow>(&self, app: &mut App, table: &impl Table<Row = TRow>) -> &Self
     where
         TRow: Send + Sync + Clone + 'static,
     {
@@ -188,7 +189,7 @@ impl<
     }
 
     /// Register a Bevy event of type UpdateEvent<TRow> for the `on_update` event on the provided table.
-    fn on_update<TRow, TTable>(&self, app: &mut App, table: &TTable) -> &Self
+    pub fn on_update<TRow, TTable>(&self, app: &mut App, table: &TTable) -> &Self
     where
         TRow: Send + Sync + Clone + 'static,
         TTable: Table<Row = TRow> + TableWithPrimaryKey<Row = TRow>,
@@ -219,7 +220,7 @@ impl<
     }
 
     /// Register a Bevy event of type InsertUpdateEvent<TRow> for the `on_insert` and `on_update` events on the provided table.
-    fn on_insert_update<TRow, TTable>(&self, app: &mut App, table: &TTable) -> &Self
+    pub fn on_insert_update<TRow, TTable>(&self, app: &mut App, table: &TTable) -> &Self
     where
         TRow: Send + Sync + Clone + 'static,
         TTable: Table<Row = TRow> + TableWithPrimaryKey<Row = TRow>,
@@ -257,6 +258,15 @@ impl<
 
         self
     }
+
+    pub fn reducer_event<TReducer>(&self, app: &mut App) -> Sender<ReducerResultEvent<TReducer>>
+    where
+        TReducer: Send + Sync + Clone + 'static,
+    {
+        let (send, recv) = channel::<ReducerResultEvent<TReducer>>();
+        app.add_event_channel(recv);
+        send
+    }
 }
 
 impl<
@@ -276,6 +286,7 @@ impl<
         let conn = DbConnectionBuilder::<M>::new()
             .with_module_name(self.name.clone())
             .with_uri(self.uri.clone())
+            .with_token(Some(self.token.clone()))
             .on_connect_error(move |_ctx, err| {
                 send_connect_error
                     .send(StdbConnectionErrorEvent { err })
@@ -299,6 +310,14 @@ impl<
 
         let run_fn = self.run_fn.expect("No run function specified!");
         run_fn(&conn);
+
+        for table_register in self.table_registers.iter() {
+            table_register(self, app, conn.db());
+        }
+
+        if let Some(register_callbacks) = self.register_callbacks {
+            register_callbacks(self, app, conn.db(), conn.reducers());
+        }
 
         app.insert_resource(StdbConnection::new(conn));
     }

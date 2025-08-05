@@ -1,15 +1,12 @@
 use bevy::{log::LogPlugin, prelude::*};
 use bevy_spacetimedb::{
-    ReadInsertEvent, ReadReducerEvent, ReducerResultEvent, StdbConnectedEvent, StdbConnection,
-    StdbConnectionErrorEvent, StdbEvents, StdbPlugin, register_reducers, tables,
+    ReadInsertEvent, ReadReducerEvent, ReducerResultEvent, RegisterToTableEvents,
+    StdbConnectedEvent, StdbConnection, StdbPlugin, register_reducers, tables,
 };
 use spacetimedb_sdk::{ReducerEvent, Table};
-use stdb::{
-    DbConnection, GameServersTableAccess, PlanetsTableAccess, Player, PlayersTableAccess, Reducer,
-    StarSystemsTableAccess, gs_register, player_register,
-};
+use stdb::{DbConnection, Player, PlayersTableAccess, Reducer, player_register};
 
-use crate::stdb::RemoteTables;
+use crate::stdb::{PlanetsTableAccess, RemoteTables, gs_register};
 
 mod stdb;
 
@@ -27,63 +24,35 @@ pub struct GsRegisterEvent {
 }
 
 pub fn main() {
-    StdbPlugin::default()
-        .with_name("http://localhost:3000")
-        .with_uri("chat")
-        .with_run_fn(DbConnection::run_threaded)
-        .add_table(RemoteTables::planets, StdbEvents::all());
-
     App::new()
         .add_plugins((MinimalPlugins, LogPlugin::default()))
-        // .add_plugins(W
-        //     StdbPlugin::default()
-        //         .with_connection(|send_connected, send_disconnected, send_connect_error, _| {
-        //             let conn = DbConnection::builder()
-        //                 .with_module_name("stellarwar")
-        //                 .with_uri("https://stdb.jlavocat.eu")
-        //                 .on_connect_error(move |_ctx, err| {
-        //                     send_connect_error
-        //                         .send(StdbConnectionErrorEvent { err })
-        //                         .unwrap();
-        //                 })
-        //                 .on_disconnect(move |_ctx, err| {
-        //                     send_disconnected
-        //                         .send(StdbDisconnectedEvent { err })
-        //                         .unwrap();
-        //                 })
-        //                 .on_connect(move |_ctx, id, token| {
-        //                     send_connected
-        //                         .send(StdbConnectedEvent {
-        //                             identity: id,
-        //                             access_token: token.to_string(),
-        //                         })
-        //                         .unwrap();
-        //                 })
-        //                 .build()
-        //                 .expect("SpacetimeDB connection failed");
-        //             conn.run_threaded();
-        //             conn
-        //         })
-        //         .with_events(|plugin, app, db, reducers| {
-        //             tables!(
-        //                 players,
-        //                 game_servers,
-        //                 (star_systems, no_update),
-        //                 (planets, no_update)
-        //             );
-        //             register_reducers!(
-        //                 on_player_register(ctx, id) => RegisterPlayerEvent {
-        //                     event: ctx.event.clone(),
-        //                     id: *id
-        //                 },
-        //                 on_gs_register(ctx, ip, port) => GsRegisterEvent {
-        //                     event: ctx.event.clone(),
-        //                     ip: ip.clone(),
-        //                     port: *port
-        //                 }
-        //             );
-        //         }),
-        // )
+        .add_plugins(
+            StdbPlugin::default()
+                //Eliminated boilerplate here.
+                .with_name("http://localhost:3000")
+                .with_uri("chat")
+                .with_token("Read this value from storage")
+                .with_run_fn(DbConnection::run_threaded)
+                // I want to eliminate boilerplate (whole with_events part), the commented line below almost works, I could not get the lifetimes to match.
+                // Same approach can be made for reducers if this one works.
+                // .add_table(RemoteTables::planets, RegisterToTableEvents::all())
+                //Old functionality still works.
+                .with_events(|plugin, app, db, reducers| {
+                    tables!(players);
+
+                    register_reducers!(
+                        on_player_register(ctx, id) => RegisterPlayerEvent {
+                            event: ctx.event.clone(),
+                            id: *id
+                        },
+                        on_gs_register(ctx, ip, port) => GsRegisterEvent {
+                            event: ctx.event.clone(),
+                            ip: ip.clone(),
+                            port: *port
+                        }
+                    );
+                }),
+        )
         .add_systems(
             Update,
             (on_connected, on_register_player, on_gs_register, on_player),

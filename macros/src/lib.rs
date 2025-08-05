@@ -73,14 +73,14 @@ pub fn tables(input: TokenStream) -> TokenStream {
     for entry in entries {
         let table = &entry.table;
         output.extend(quote! {
-            plugin.on_insert(app, db.#table());
-            plugin.on_delete(app, db.#table());
+            plugin.on_insert(app, &db.#table());
+            plugin.on_delete(app, &db.#table());
         });
 
         if entry.has_update {
             output.extend(quote! {
-                plugin.on_update(app, db.#table());
-                plugin.on_insert_update(app, db.#table());
+                plugin.on_update(app, &db.#table());
+                plugin.on_insert_update(app, &db.#table());
             });
         }
     }
