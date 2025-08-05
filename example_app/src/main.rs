@@ -1,7 +1,7 @@
 use bevy::{log::LogPlugin, prelude::*};
 use bevy_spacetimedb::{
     ReadInsertEvent, ReadReducerEvent, ReducerResultEvent, StdbConnectedEvent, StdbConnection,
-    StdbConnectionErrorEvent, StdbDisconnectedEvent, StdbPlugin, register_reducers, tables,
+    StdbConnectionErrorEvent, StdbEvents, StdbPlugin, register_reducers, tables,
 };
 use spacetimedb_sdk::{ReducerEvent, Table};
 use stdb::{
@@ -9,7 +9,7 @@ use stdb::{
     StarSystemsTableAccess, gs_register, player_register,
 };
 
-use crate::stdb::{RemoteTables};
+use crate::stdb::RemoteTables;
 
 mod stdb;
 
@@ -30,8 +30,9 @@ pub fn main() {
     StdbPlugin::default()
         .with_name("http://localhost:3000")
         .with_uri("chat")
-        .with_run_fn(DbConnection::run_threaded);
-        // .add_table(RemoteTables::planets);
+        .with_run_fn(DbConnection::run_threaded)
+        .add_table(RemoteTables::planets, StdbEvents::all());
+
     App::new()
         .add_plugins((MinimalPlugins, LogPlugin::default()))
         // .add_plugins(W
