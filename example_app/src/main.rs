@@ -9,7 +9,7 @@ use stdb::{
     StarSystemsTableAccess, gs_register, player_register,
 };
 
-use crate::stdb::RemoteModule;
+use crate::stdb::{RemoteTables};
 
 mod stdb;
 
@@ -28,9 +28,10 @@ pub struct GsRegisterEvent {
 
 pub fn main() {
     StdbPlugin::default()
-        .with_name("asd")
-        .with_uri("dsa")
+        .with_name("http://localhost:3000")
+        .with_uri("chat")
         .with_run_fn(DbConnection::run_threaded);
+        // .add_table(RemoteTables::planets);
     App::new()
         .add_plugins((MinimalPlugins, LogPlugin::default()))
         // .add_plugins(W

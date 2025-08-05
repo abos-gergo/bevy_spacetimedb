@@ -1,27 +1,16 @@
-use std::{
-    any::{Any, TypeId},
-    sync::{
-        Mutex,
-        mpsc::{Sender, channel},
-    },
-    thread::JoinHandle,
-};
+use std::{any::Any, sync::mpsc::channel, thread::JoinHandle};
 
-use bevy::{
-    app::{App, Plugin},
-    platform::collections::HashMap,
-};
+use bevy::app::{App, Plugin};
 use bevy_spacetimedb_macros::tables;
-use spacetimedb_sdk::{DbConnectionBuilder, DbContext};
+use spacetimedb_sdk::{DbConnectionBuilder, DbContext, Table, TableWithPrimaryKey};
 
 use crate::{
     AddEventChannelAppExtensions, StdbConnectedEvent, StdbConnection, StdbConnectionErrorEvent,
     StdbDisconnectedEvent,
 };
 
-///
 pub struct StdbPlugin<
-    C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
+    C: spacetimedb_sdk::__codegen::DbConnection<Module = M> + DbContext,
     M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
 > {
     name: String,
@@ -30,7 +19,7 @@ pub struct StdbPlugin<
 }
 
 impl<
-    C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
+    C: spacetimedb_sdk::__codegen::DbConnection<Module = M> + DbContext,
     M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
 > Default for StdbPlugin<C, M>
 {
@@ -43,33 +32,38 @@ impl<
     }
 }
 
-///
 impl<
-    C: spacetimedb_sdk::__codegen::DbConnection<Module = M>,
+    C: spacetimedb_sdk::__codegen::DbConnection<Module = M> + DbContext,
     M: spacetimedb_sdk::__codegen::SpacetimeModule<DbConnection = C>,
 > StdbPlugin<C, M>
 {
-    ///
     pub fn with_run_fn(mut self, run_fn: fn(&C) -> JoinHandle<()>) -> Self {
         self.run_fn = Some(run_fn);
         self
     }
 
-    /// .
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = name.into();
         self
     }
 
-    /// .
     pub fn with_uri(mut self, uri: impl Into<String>) -> Self {
         self.uri = uri.into();
         self
     }
 
-    ///
     pub fn with_tables() {
         tables!();
+    }
+
+    pub fn add_table<TRow, TTable, F>(mut self, accessor: F) -> Self
+    where
+        TRow: Send + Sync + Clone + 'static,
+        TTable: Table<Row = TRow> + TableWithPrimaryKey<Row = TRow>,
+        F: Fn(&C::DbView) -> TTable,
+    {
+        //Store the accessor inside the struct
+        self
     }
 }
 
@@ -111,9 +105,8 @@ impl<
             .build()
             .expect("SpacetimeDB connection failed");
 
-        if let Some(run_fn) = self.run_fn {
-            run_fn(&conn);
-        }
+        let run_fn = self.run_fn.expect("No run function specified!");
+        run_fn(&conn);
 
         app.insert_resource(StdbConnection::new(conn));
     }
