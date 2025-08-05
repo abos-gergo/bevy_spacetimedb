@@ -27,7 +27,7 @@ pub struct GsRegisterEvent {
 }
 
 pub fn main() {
-    StdbPlugin::builder()
+    StdbPlugin::default()
         .with_name("asd")
         .with_uri("dsa")
         .with_run_fn(DbConnection::run_threaded);
